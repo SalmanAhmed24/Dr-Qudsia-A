@@ -2,8 +2,10 @@
 
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import gsap from "gsap";
-import { LAND } from "@/lib/landmask";
-import { HOME, REGIONS, isRegion, type FilterKey, type RegionKey } from "@/lib/data";
+import { geoGraticule10, geoOrthographic, geoPath, type GeoPermissibleObjects } from "d3-geo";
+import { feature, mesh } from "topojson-client";
+import type { GeometryCollection, Topology } from "topojson-specification";
+import { HOME, HOME_COUNTRY, REGIONS, isRegion, type FilterKey, type RegionKey } from "@/lib/data";
 
 export type GlobeApi = { focus: (key: FilterKey | null, hover?: boolean) => void };
 
@@ -18,23 +20,32 @@ const vec = (lat: number, lon: number): V3 => {
   return [c * Math.cos(lo), c * Math.sin(lo), Math.sin(la)];
 };
 
-/** Decodes the 2° land bitmask into unit vectors, thinned towards the poles for even spacing. */
-let landCache: Float32Array | null = null;
-function landPoints() {
-  if (landCache) return landCache;
-  const bin = atob(LAND);
-  const out: number[] = [];
-  for (let r = 0; r < 90; r++) {
-    const lat = 89 - r * 2;
-    const step = Math.max(1, Math.round(1 / Math.cos(lat * RAD)));
-    for (let c = 0; c < 180; c++) {
-      const i = r * 180 + c;
-      if (((bin.charCodeAt(i >> 3) >> (i & 7)) & 1) && c % step === 0) out.push(...vec(lat, -179 + c * 2));
+type World = {
+  land: GeoPermissibleObjects;
+  borders: GeoPermissibleObjects;
+  countries: Map<string, GeoPermissibleObjects>;
+};
+
+/** Loads Natural Earth country shapes (world-atlas, 1:110m) in a separate chunk after the page is interactive. */
+let worldPromise: Promise<World> | null = null;
+function loadWorld() {
+  worldPromise ??= import("world-atlas/countries-110m.json").then((mod) => {
+    const topo = (mod.default ?? mod) as unknown as Topology<{ countries: GeometryCollection; land: GeometryCollection }>;
+    const countries = new Map<string, GeoPermissibleObjects>();
+    for (const g of topo.objects.countries.geometries) {
+      countries.set(String(g.id), feature(topo, g) as GeoPermissibleObjects);
     }
-  }
-  landCache = new Float32Array(out);
-  return landCache;
+    return {
+      land: feature(topo, topo.objects.land) as GeoPermissibleObjects,
+      borders: mesh(topo, topo.objects.countries, (x, y) => x !== y) as GeoPermissibleObjects,
+      countries,
+    };
+  });
+  return worldPromise;
 }
+
+const SPHERE: GeoPermissibleObjects = { type: "Sphere" };
+const GRATICULE = geoGraticule10();
 
 function buildArcs(): Arc[] {
   const a = vec(HOME[0], HOME[1]);
@@ -69,16 +80,18 @@ export default function Globe({ apiRef }: { apiRef: MutableRefObject<GlobeApi | 
     if (!ctx) return;
 
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const pts = landPoints();
+    let world: World | null = null;
     const arcs = buildArcs();
     const home = vec(HOME[0], HOME[1]);
     const state = { lon: 40, lat: 18, zoom: 1, scale: reduce ? 1 : 0.82, reveal: reduce ? 1 : 0 };
+    const projection = geoOrthographic().clipAngle(90).precision(0.6);
+    const path = geoPath(projection, ctx);
     let active: RegionKey | null = null;
     let hover: RegionKey | null = null;
     let size = 1, dpr = 1, visible = true, dragging = false, last = 0, clock = 0, raf = 0;
     let tween: gsap.core.Tween | null = null;
 
-    const colors = { land: "", sea: "", pin: "", ink: "", line: "", font: "" };
+    const colors = { land: "", sea: "", pin: "", ink: "", line: "", font: "", oceanHi: "", oceanLo: "", landFill: "", coast: "", border: "", grid: "" };
     const readColors = () => {
       const cs = getComputedStyle(document.documentElement);
       colors.land = cs.getPropertyValue("--land").trim();
@@ -86,6 +99,12 @@ export default function Globe({ apiRef }: { apiRef: MutableRefObject<GlobeApi | 
       colors.pin = cs.getPropertyValue("--pin").trim();
       colors.ink = cs.getPropertyValue("--ink").trim();
       colors.line = cs.getPropertyValue("--line").trim();
+      colors.oceanHi = cs.getPropertyValue("--ocean-hi").trim();
+      colors.oceanLo = cs.getPropertyValue("--ocean-lo").trim();
+      colors.landFill = cs.getPropertyValue("--land-fill").trim();
+      colors.coast = cs.getPropertyValue("--coast").trim();
+      colors.border = cs.getPropertyValue("--border").trim();
+      colors.grid = cs.getPropertyValue("--grid").trim();
       colors.font = getComputedStyle(document.body).fontFamily;
     };
     readColors();
@@ -133,18 +152,53 @@ export default function Globe({ apiRef }: { apiRef: MutableRefObject<GlobeApi | 
       ctx!.clip();
       if (R > CR) { ctx!.fillStyle = colors.sea; ctx!.fill(); }
 
-      // land
-      ctx!.fillStyle = colors.land;
-      const n = pts.length / 3, dotR = Math.max(1, R / 150);
-      for (let i = 0; i < n; i++) {
-        const j = i * 3, x = pts[j], y = pts[j + 1], z = pts[j + 2];
-        const x1 = x * cl + y * sl, y1 = -x * sl + y * cl, x2 = x1 * cp + z * sp;
-        if (x2 <= 0) continue;
-        if (state.reveal < 1 && ((i * 7919) % 1000) / 1000 > state.reveal) continue;
-        const z2 = -x1 * sp + z * cp;
-        ctx!.globalAlpha = 0.25 + 0.75 * x2;
-        ctx!.fillRect(cx + R * y1 - dotR, cy - R * z2 - dotR, dotR * 2, dotR * 2);
+      projection.rotate([-state.lon, -state.lat]).scale(R).translate([cx, cy]);
+
+      // ocean with a soft light source top-left
+      const ocean = ctx!.createRadialGradient(cx - R * 0.4, cy - R * 0.45, R * 0.05, cx, cy, R);
+      ocean.addColorStop(0, colors.oceanHi);
+      ocean.addColorStop(1, colors.oceanLo);
+      ctx!.fillStyle = ocean;
+      ctx!.beginPath(); path(SPHERE); ctx!.fill();
+
+      ctx!.strokeStyle = colors.grid; ctx!.lineWidth = 0.7;
+      ctx!.beginPath(); path(GRATICULE); ctx!.stroke();
+
+      if (world) {
+        ctx!.globalAlpha = state.reveal;
+        ctx!.fillStyle = colors.landFill;
+        ctx!.beginPath(); path(world.land); ctx!.fill();
+
+        // research countries, tinted by region; the focused region glows, others step back
+        const focusNow = hover || active;
+        (Object.keys(REGIONS) as RegionKey[]).forEach((k) => {
+          const r = REGIONS[k];
+          const alpha = !focusNow ? 0.55 : focusNow === k ? 0.95 : 0.22;
+          ctx!.globalAlpha = alpha * state.reveal;
+          ctx!.fillStyle = r.color;
+          ctx!.beginPath();
+          r.countries.forEach((id) => { const f = world!.countries.get(id); if (f) path(f); });
+          ctx!.fill();
+        });
+        const pk = world.countries.get(HOME_COUNTRY);
+        if (pk) { ctx!.globalAlpha = 0.75 * state.reveal; ctx!.fillStyle = colors.pin; ctx!.beginPath(); path(pk); ctx!.fill(); }
+
+        ctx!.globalAlpha = state.reveal;
+        ctx!.strokeStyle = colors.border; ctx!.lineWidth = 0.6;
+        ctx!.beginPath(); path(world.borders); ctx!.stroke();
+        ctx!.strokeStyle = colors.coast; ctx!.lineWidth = 0.8;
+        ctx!.beginPath(); path(world.land); ctx!.stroke();
+        ctx!.globalAlpha = 1;
       }
+
+      // 3D shading: highlight top-left, gentle shadow around the rim
+      const shade = ctx!.createRadialGradient(cx - R * 0.35, cy - R * 0.4, R * 0.1, cx, cy, R);
+      shade.addColorStop(0, "rgba(255,255,255,0.35)");
+      shade.addColorStop(0.45, "rgba(255,255,255,0)");
+      shade.addColorStop(0.85, "rgba(30,40,110,0.06)");
+      shade.addColorStop(1, "rgba(30,40,110,0.22)");
+      ctx!.fillStyle = shade;
+      ctx!.beginPath(); path(SPHERE); ctx!.fill();
 
       // arcs, sparks, pins, labels
       const focus = hover || active;
@@ -256,13 +310,18 @@ export default function Globe({ apiRef }: { apiRef: MutableRefObject<GlobeApi | 
     });
     io.observe(wrap);
 
-    let intro: gsap.core.Timeline | null = null;
+    let intro: gsap.core.Tween | null = null;
+    let alive = true;
+    loadWorld().then((w) => {
+      if (!alive) return;
+      world = w;
+      if (reduce) draw();
+      else gsap.to(state, { reveal: 1, duration: 1.2, ease: "power2.out" });
+    });
     if (reduce) {
       document.fonts?.ready.then(() => { readColors(); draw(); });
     } else {
-      intro = gsap.timeline()
-        .to(state, { scale: 1, duration: 1.8, ease: "expo.out" }, 0.1)
-        .to(state, { reveal: 1, duration: 1.6, ease: "power2.out" }, 0.1);
+      intro = gsap.to(state, { scale: 1, duration: 1.8, ease: "expo.out", delay: 0.1 });
       document.fonts?.ready.then(readColors);
       raf = requestAnimationFrame(loop);
     }
@@ -315,6 +374,8 @@ export default function Globe({ apiRef }: { apiRef: MutableRefObject<GlobeApi | 
     };
 
     return () => {
+      alive = false;
+      gsap.killTweensOf(state);
       cancelAnimationFrame(raf);
       ro.disconnect();
       io.disconnect();
@@ -336,7 +397,7 @@ export default function Globe({ apiRef }: { apiRef: MutableRefObject<GlobeApi | 
           <canvas
             ref={canvasRef}
             role="img"
-            aria-label="A turning globe with lines from Lahore to the regions Dr Akram researches: the Middle East, South Asia, the Indian Ocean, Russia and Eurasia, and Africa."
+            aria-label="A turning world map globe with lines from Lahore to the regions Dr Akram researches: the Middle East, South Asia, the Indian Ocean, Russia and Eurasia, and Africa."
           />
         </div>
         <p className="globe-caption" aria-live="polite">

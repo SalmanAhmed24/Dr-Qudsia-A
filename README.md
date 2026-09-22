@@ -24,7 +24,7 @@ Needs Node.js 20.9 or newer.
 - `lib/data.ts` holds all CV content: publications, timeline, courses, theses, talks. Edit here to update the site.
 - `app/layout.tsx` sets fonts (Bricolage Grotesque for headings, Geist for text), metadata and JSON-LD.
 - `app/opengraph-image.tsx` generates the link preview image; `sitemap.ts`, `robots.ts` and `manifest.ts` sit beside it.
-- `components/Globe.tsx` is the interactive globe; `Research.tsx` holds the region filter (GSAP Flip layout animation).
+- `components/Globe.tsx` is the interactive globe, drawn with d3-geo from Natural Earth country shapes (world-atlas). Research countries per region are listed by ISO code in `lib/data.ts`; `Research.tsx` holds the region filter (GSAP Flip layout animation).
 - `components/Journey.tsx` is the pinned horizontal timeline; `Animations.tsx` holds page-wide motion.
 - Colours are CSS variables at the top of `app/globals.css`.
 

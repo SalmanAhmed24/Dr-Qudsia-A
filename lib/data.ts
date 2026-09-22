@@ -4,16 +4,18 @@ export type FilterKey = "all" | RegionKey | "theory";
 type Pin = [label: string, lat: number, lon: number];
 
 export const HOME: [number, number] = [31.55, 74.35]; // Lahore
+export const HOME_COUNTRY = "586"; // Pakistan
 
 export const REGIONS: Record<
   RegionKey,
-  { name: string; center: [number, number]; zoom: number; color: string; pins: Pin[] }
+  { name: string; center: [number, number]; zoom: number; color: string; countries: string[]; pins: Pin[] }
 > = {
   "middle-east": {
     name: "the Middle East",
     center: [31, 42],
     zoom: 1.7,
     color: "#FF9F6E",
+    countries: ["760", "368", "364", "422", "376", "275"], // Syria, Iraq, Iran, Lebanon, Israel, Palestine
     pins: [
       ["Syria", 35, 38.5],
       ["Iraq", 33.3, 44.4],
@@ -27,6 +29,7 @@ export const REGIONS: Record<
     center: [24, 78],
     zoom: 1.5,
     color: "#3FD3A0",
+    countries: ["004", "356", "050", "144"], // Afghanistan, India, Bangladesh, Sri Lanka
     pins: [
       ["Afghanistan", 34.5, 69.2],
       ["India", 22, 79],
@@ -39,6 +42,7 @@ export const REGIONS: Record<
     center: [8, 80],
     zoom: 1.25,
     color: "#43B5F5",
+    countries: ["262", "458", "360"], // Djibouti, Malaysia, Indonesia
     pins: [
       ["Strait of Malacca", 2.5, 101.5],
       ["Indian Ocean", -8, 76],
@@ -51,6 +55,7 @@ export const REGIONS: Record<
     center: [52, 48],
     zoom: 1.3,
     color: "#9B84FF",
+    countries: ["643", "804", "031", "051", "398", "860", "795", "762", "417"], // Russia, Ukraine, Caucasus, Central Asia
     pins: [
       ["Moscow", 55.75, 37.6],
       ["Ukraine", 49, 32],
@@ -64,6 +69,7 @@ export const REGIONS: Record<
     center: [6, 22],
     zoom: 1.35,
     color: "#F2B500",
+    countries: ["566", "404"], // Nigeria, Kenya
     pins: [
       ["Nigeria", 9.1, 7.4],
       ["Kenya", -1.3, 36.8],
