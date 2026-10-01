@@ -11,9 +11,9 @@ gsap.registerPlugin(Flip, ScrollTrigger);
 
 const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
-type Props = { onRegion: (key: FilterKey | null, hover: boolean) => void };
+type Props = { onRegion: (key: FilterKey | null, hover: boolean) => void; globe: React.ReactNode };
 
-export default function Research({ onRegion }: Props) {
+export default function Research({ onRegion, globe }: Props) {
   const [filter, setFilter] = useState<FilterKey>("all");
   const rootRef = useRef<HTMLElement>(null);
   const flipState = useRef<Flip.FlipState | null>(null);
@@ -80,6 +80,8 @@ export default function Research({ onRegion }: Props) {
         <SplitHeading id="research-title">Research that follows the fault lines</SplitHeading>
         <p>Peer-reviewed work on terrorism, proxy forces, maritime rivalry and foreign policy. Pick a region and the globe turns to meet it.</p>
       </div>
+
+      {globe}
 
       <div className="chips" role="group" aria-label="Filter publications by region">
         {FILTERS.map((f) => {

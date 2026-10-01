@@ -16,9 +16,16 @@ export default function Animations() {
       // Opening sequence
       const tl = gsap.timeline({ defaults: { ease: "expo.out" } });
       tl.from(".hero h1 .ch", { yPercent: 115, rotate: 6, duration: 1.1, stagger: 0.035 })
-        .from(".hero h1 .grad", { yPercent: 115, duration: 1.2 }, 0.25)
+        .from(".hero h1 .name-chip", { yPercent: 115, duration: 1.2 }, 0.25)
+        .from(".portrait", { y: 48, opacity: 0, scale: 0.94, duration: 1.4 }, 0.15)
+        .from(".portrait-glow", { scale: 0.7, opacity: 0, duration: 1.6, ease: "power2.out" }, 0.2)
         .from(".hero .reveal", { y: 24, opacity: 0, duration: 0.9, stagger: 0.08 }, "-=.8")
         .from(".nav", { y: -20, opacity: 0, duration: 0.8 }, 0.2);
+
+      // the portrait drifts a little as you scroll, and breathes while it sits there
+      gsap.to(".portrait", { yPercent: -7, ease: "none", scrollTrigger: { trigger: ".hero", start: "top top", end: "bottom top", scrub: 0.6 } });
+      gsap.to(".portrait-frame", { y: -10, duration: 6, ease: "sine.inOut", repeat: -1, yoyo: true });
+      gsap.to(".portrait-glow", { scale: 1.06, rotate: 8, duration: 12, ease: "sine.inOut", repeat: -1, yoyo: true });
 
       gsap.utils.toArray<HTMLElement>("[data-count]").forEach((el) => {
         const end = Number(el.dataset.count), o = { v: 0 };

@@ -25,7 +25,8 @@ export default function Home() {
       </div>
       <Nav />
       <main id="main">
-        <Atlas hero={<Hero />} />
+        <Hero />
+        <Atlas />
         <Journey />
         <Teaching />
         <Speaking />
